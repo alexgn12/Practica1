@@ -42,20 +42,26 @@ function run_http_server(string $host, int $port, string $docroot): void
         $path = urldecode(parse_url($target, PHP_URL_PATH) ?? '/');
         if ($path === '' || $path[0] !== '/') { $path = '/'; } // exigimos ruta absoluta
 
-        // 4) Construir ruta física segura dentro del docroot
-        $full = realpath($docrootReal . $path);
-        if ($full === false) {
-            // ¿era un directorio sin realpath todavía? probar index.html
-            $maybe = $docrootReal . rtrim($path, '/') . '/index.html';
-            $full = realpath($maybe);
+        // 4) Construir ruta física segura dentro del docroot (sirviendo index.html en dirs)
+        $root = rtrim($docrootReal, "/\\");                 // docroot normalizado sin barra final
+        $requested = $root . $path;
+
+        // Si la ruta apunta a un directorio (con o sin barra final), servir index.html
+        if (is_dir($requested)) {
+            $requested = rtrim($requested, "/\\") . DIRECTORY_SEPARATOR . 'index.html';
         }
 
-        // Debe existir, ser archivo, y estar dentro del docroot
-        if ($full === false || !is_file($full) || strpos($full, $docrootReal) !== 0) {
+        // Resolver la ruta final real
+        $full = realpath($requested);
+
+        // Validaciones: debe existir, ser archivo y quedar dentro del docroot de forma segura
+        $rootPrefix = $root . DIRECTORY_SEPARATOR;          // evita falsos positivos: /htdocs vs /htdocs2
+        if ($full === false || !is_file($full) || strncmp($full, $rootPrefix, strlen($rootPrefix)) !== 0) {
             send_text($client, 404, "Not Found");
             socket_close($client);
             continue;
         }
+
 
         // 5) Preparar y enviar respuesta 200 con el archivo
         $size = filesize($full) ?: 0;
